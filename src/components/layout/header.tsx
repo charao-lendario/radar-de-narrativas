@@ -7,7 +7,7 @@ export function Header() {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
-            Inteligência de Campanha 2026
+            Radar de Narrativas
           </h1>
           <p className="text-xs text-blue-300/70">
             Charlles Evangelista & Delegada Sheila
