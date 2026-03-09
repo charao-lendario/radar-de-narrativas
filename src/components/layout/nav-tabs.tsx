@@ -1,18 +1,24 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { NAV_TABS } from "@/lib/constants"
+import type { CandidateFilter } from "@/lib/constants"
 
 export function NavTabs() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const candidateFilter = (searchParams.get("candidate") ?? "charlles") as CandidateFilter
 
   return (
     <nav className="border-b bg-background">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="-mb-px flex space-x-1 overflow-x-auto scrollbar-none">
-          {NAV_TABS.map((tab) => {
+          {NAV_TABS.filter((tab) => {
+            if (tab.href === "/competitor" && candidateFilter === "charlles") return false
+            return true
+          }).map((tab) => {
             const isActive =
               pathname === tab.href ||
               (tab.href === "/overview" && pathname === "/")
