@@ -170,6 +170,13 @@ class ContextualSentimentData(BaseModel):
     apoio_percent: float
     contra_percent: float
     neutro_percent: float
+    # alvo da emoção — distingue crítica real ao candidato de indignação com o tema
+    critica_candidato: int = 0
+    indignacao_tema: int = 0
+    ataque_terceiro: int = 0
+    critica_candidato_percent: float = 0.0
+    indignacao_tema_percent: float = 0.0
+    ataque_terceiro_percent: float = 0.0
 
 
 class ProfileData(BaseModel):

@@ -42,6 +42,9 @@ create table if not exists comments (
     themes          text[] default '{}',
     analyzed_at     timestamptz
 );
+-- alvo da emoção do comentário (candidato | tema | terceiro | nenhum)
+alter table comments add column if not exists target text;
+
 create index if not exists idx_comments_post on comments(post_id);
 create index if not exists idx_comments_candidate on comments(candidate_id);
 create index if not exists idx_comments_analyzed on comments(analyzed_at);

@@ -1,11 +1,16 @@
 """Análise de sentimento/postura/temas de comentários.
 
-Dois motores:
-  - LLM (Claude/Anthropic): mais preciso, requer créditos.
-  - Heurística léxica PT-BR: custo zero, determinística, fallback automático.
+PRINCÍPIO CENTRAL (contexto político):
+  sentiment/score medem FAVORABILIDADE AO CANDIDATO — não a emoção bruta.
+  - Crítica AO candidato (reclama dele, "não devia postar", ataca caráter) → negativo
+  - Indignação/revolta COM O TEMA do post (vídeo forte) → engajamento a favor → positivo/neutro
+  - Ataque a TERCEIROS (adversário, bandido) → não conta contra o candidato → neutro/positivo
+  - Elogio/apoio → positivo
 
-SENTIMENT_PROVIDER controla: "auto" (default, tenta LLM e cai pra heurística),
-"claude" (só LLM) ou "heuristic" (só léxico).
+Campos: sentiment (favorabilidade), score (-1..1), stance (apoio/contra/neutro),
+        target (candidato|tema|terceiro|nenhum), themes.
+
+Dois motores: LLM (Claude) e heurística léxica (fallback). SENTIMENT_PROVIDER controla.
 """
 from __future__ import annotations
 
@@ -17,110 +22,59 @@ from anthropic import Anthropic
 from app import db
 from app.config import settings
 
-# Vocabulário de temas controlado (PT-BR, contexto político)
 THEMES = [
     "segurança pública", "saúde", "educação", "economia", "emprego",
     "corrupção", "infraestrutura", "transporte", "meio ambiente", "direitos",
     "religião", "família", "crítica pessoal", "apoio pessoal", "outros",
 ]
-
+TARGETS = ["candidato", "tema", "terceiro", "nenhum"]
 BATCH = 15
 
 # ----------------------------------------------------------------------------
-# Motor heurístico (léxico PT-BR) — Code First, zero token
-# ----------------------------------------------------------------------------
-_POS = {
-    "parabéns", "parabens", "obrigado", "obrigada", "apoio", "apoio", "melhor", "ótimo", "otimo",
-    "excelente", "sucesso", "abençoe", "abençoa", "força", "forca", "orgulho", "justiça", "justica",
-    "bom", "boa", "amo", "amamos", "lindo", "linda", "maravilhoso", "maravilhosa", "top", "gratidão",
-    "gratidao", "represent", "guerreira", "guerreiro", "votarei", "voto", "contamos", "verdade",
-    "honesto", "honesta", "competente", "trabalho", "trabalhador", "respeito", "admiro", "admiração",
-    "merece", "campeã", "campeao", "fenômeno", "show", "incrível", "incrivel", "perfeito", "deus",
-    "vamos", "valeu", "ajuda", "ajudou", "feliz", "esperança", "esperanca", "obg", "lider", "líder",
-}
-_NEG = {
-    "vergonha", "mentira", "mentiroso", "ladrão", "ladrao", "ladra", "corrupto", "corrupta", "péssimo",
-    "pessimo", "ruim", "horrível", "horrivel", "golpe", "fraude", "palhaço", "palhaco", "vendido",
-    "vendida", "descaro", "lixo", "nojo", "nojento", "falso", "falsa", "hipócrita", "hipocrita",
-    "decepção", "decepcao", "decepcionado", "traidor", "traidora", "enganação", "enganacao", "picareta",
-    "absurdo", "ridículo", "ridiculo", "fraco", "fraca", "incompetente", "covarde", "farsa", "demagogia",
-    "oportunista", "interesseiro", "cadê", "cade", "nunca", "pior", "fora", "renuncia", "preso", "cadeia",
-    "rouba", "roubou", "roubo", "safado", "safada", "verme", "capacho", "fantoche", "fingindo",
-}
-_THEME_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "segurança pública": ("seguranç", "seguranc", "polícia", "policia", "bandido", "crime", "violência",
-                           "violencia", "arma", "delegad", "assalto", "tráfico", "trafico", "pm"),
-    "saúde": ("saúde", "saude", "hospital", "médic", "medic", "sus", "vacina", "posto", "remédio",
-              "remedio", "ubs", "doente"),
-    "educação": ("educaç", "educac", "escola", "professor", "ensino", "creche", "universidade",
-                 "aluno", "merenda"),
-    "economia": ("economia", "imposto", "preço", "preco", "salário", "salario", "inflação", "inflacao",
-                 "dinheiro público", "verba", "gasto"),
-    "emprego": ("emprego", "desemprego", "vaga", "trabalh", "renda", "carteira assinada"),
-    "corrupção": ("corrupç", "corrupc", "corrupto", "rouba", "roubo", "propina", "desvio", "lavagem",
-                  "fraude", "superfaturad"),
-    "infraestrutura": ("asfalto", "buraco", "obra", "saneamento", "esgoto", "rua", "calçada", "calcada",
-                       "iluminação", "iluminacao", "praça", "praca"),
-    "transporte": ("ônibus", "onibus", "transporte", "metrô", "metro", "passagem", "tarifa", "trânsito",
-                   "transito"),
-    "meio ambiente": ("meio ambiente", "poluição", "poluicao", "lixo", "árvore", "arvore", "rio",
-                      "desmatamento", "enchente"),
-    "direitos": ("direitos", "lgbt", "mulher", "racismo", "minoria", "igualdade", "feminis", "aborto"),
-    "religião": ("deus", "jesus", "igreja", "cristã", "crista", "cristão", "cristao", "fé", "abençoe",
-                 "abençoa", "evangéli", "evangeli", "católic", "catolic", "pastor"),
-    "família": ("família", "familia", "filho", "filha", "criança", "crianca", "pais", "mãe", "mae",
-                "pai", "lar"),
-}
-_TOKEN_RE = re.compile(r"[a-záàâãéêíóôõúüç]+", re.IGNORECASE)
-
-
-def _heuristic_classify(text: str) -> dict:
-    low = text.lower()
-    tokens = _TOKEN_RE.findall(low)
-    tokenset = set(tokens)
-    pos = len(tokenset & _POS)
-    neg = len(tokenset & _NEG)
-    # emojis/sinais simples
-    pos += low.count("❤") + low.count("👏") + low.count("🙏") + low.count("💪") + low.count("👍")
-    neg += low.count("👎") + low.count("🤬") + low.count("🤮")
-    total = pos + neg
-    if total == 0:
-        sentiment, score, stance = "neutral", 0.0, "neutro"
-    else:
-        score = round((pos - neg) / total, 3)
-        if score > 0.15:
-            sentiment, stance = "positive", "apoio"
-        elif score < -0.15:
-            sentiment, stance = "negative", "contra"
-        else:
-            sentiment, stance = "neutral", "neutro"
-    themes = [t for t, kws in _THEME_KEYWORDS.items() if any(k in low for k in kws)][:3]
-    if not themes:
-        themes = ["apoio pessoal" if stance == "apoio" else "crítica pessoal" if stance == "contra" else "outros"]
-    return {"sentiment": sentiment, "score": score, "stance": stance, "themes": themes}
-
-
-# ----------------------------------------------------------------------------
-# Motor LLM (Claude/Anthropic)
+# Motor LLM (Claude)
 # ----------------------------------------------------------------------------
 SYSTEM = (
-    "Você é um analista político brasileiro. Classifica comentários de Instagram em posts "
-    "de candidatos. Responda SEMPRE em JSON válido, sem texto fora do JSON."
+    "Você é um analista político brasileiro especialista em opinião pública. "
+    "Classifica comentários de Instagram em posts de candidatos com precisão sobre "
+    "PARA QUEM a emoção é direcionada. Responde SEMPRE em JSON válido."
 )
-PROMPT_TMPL = """Candidato analisado: {candidate}
 
-Para cada comentário, classifique no contexto político brasileiro:
-- "sentiment": "positive" | "negative" | "neutral"
-- "score": -1.0 (muito negativo) a 1.0 (muito positivo)
-- "stance": "apoio" | "contra" | "neutro" (posição EM RELAÇÃO AO CANDIDATO)
-- "themes": 1 a 3 temas, APENAS desta lista: {themes}
+PROMPT_TMPL = """Candidato(a) do post: {candidate}
 
-Considere ironia e gírias. Elogio irônico = negative/contra.
+Classifique cada comentário. O ponto MAIS IMPORTANTE é distinguir o ALVO da emoção:
+
+REGRA DE OURO — "sentiment" e "score" medem FAVORABILIDADE AO CANDIDATO, não a emoção bruta:
+• Crítica/ataque AO CANDIDATO (reclama dele, diz que não devia ter postado, questiona
+  caráter/competência, xinga o candidato) → sentiment "negative", stance "contra", target "candidato".
+• INDIGNAÇÃO/REVOLTA COM O TEMA do post (o vídeo mostra algo forte/chocante e a pessoa está
+  revoltada COM A SITUAÇÃO, não com o candidato) → isso é ENGAJAMENTO A FAVOR →
+  sentiment "positive" ou "neutral", stance "apoio" ou "neutro", target "tema". NUNCA "negative".
+• Ataque/raiva a TERCEIROS (adversário político, bandido, governo, outra pessoa) → não conta contra
+  o candidato → sentiment "neutral"/"positive", target "terceiro".
+• Elogio/apoio ao candidato → sentiment "positive", stance "apoio", target "candidato".
+• Comentário neutro, dúvida, off-topic, emoji solto → sentiment "neutral", target "nenhum".
+
+Campos por comentário:
+- "sentiment": "positive" | "negative" | "neutral"  (favorabilidade AO CANDIDATO)
+- "score": -1.0 (muito desfavorável ao candidato) a 1.0 (muito favorável)
+- "stance": "apoio" | "contra" | "neutro"
+- "target": "candidato" | "tema" | "terceiro" | "nenhum"
+- "themes": 1 a 3, APENAS desta lista: {themes}
+
+EXEMPLOS:
+- "Que vergonha, não devia ter postado isso" → negative, contra, candidato
+- "Que absurdo o que mostraram! Revoltante! Parabéns por denunciar" → positive, apoio, tema
+- "Esses bandidos têm que ser presos, que ódio!" → neutral, neutro, terceiro
+- "Parabéns delegada, sempre defendendo as crianças ❤️" → positive, apoio, candidato
+- "kkk mais um político querendo aparecer" → negative, contra, candidato
+- "Fico indignada com o que acontece no Brasil 😢" → neutral, neutro, tema
+
+Considere ironia e sarcasmo (elogio irônico ao candidato = negative/contra).
 
 Comentários (JSON): {comments}
 
-Responda array JSON na mesma ordem:
-{{"i": <indice>, "sentiment": "...", "score": <num>, "stance": "...", "themes": ["..."]}}"""
+Responda um array JSON, mesma ordem:
+{{"i": <indice>, "sentiment": "...", "score": <num>, "stance": "...", "target": "...", "themes": ["..."]}}"""
 
 
 def _llm_classify_batch(client: Anthropic, candidate: str, comments: list[dict]) -> list[dict]:
@@ -130,7 +84,7 @@ def _llm_classify_batch(client: Anthropic, candidate: str, comments: list[dict])
         comments=json.dumps(payload, ensure_ascii=False),
     )
     msg = client.messages.create(
-        model=settings.sentiment_model, max_tokens=2000, system=SYSTEM,
+        model=settings.sentiment_model, max_tokens=2500, system=SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
     raw = msg.content[0].text.strip()
@@ -146,12 +100,45 @@ def _llm_classify_batch(client: Anthropic, candidate: str, comments: list[dict])
 
 
 # ----------------------------------------------------------------------------
+# Motor heurístico (fallback) — conservador: só marca negativo se for claramente
+# crítica ao candidato. Não detecta alvo com precisão, então evita falso-negativo.
+# ----------------------------------------------------------------------------
+_ANTI_CANDIDATE = {
+    "vergonha", "mentiroso", "mentirosa", "corrupto", "corrupta", "ladrão", "ladra", "ladrao",
+    "incompetente", "palhaço", "palhaça", "palhaco", "hipócrita", "hipocrita", "demagogo", "demagoga",
+    "oportunista", "picareta", "vendido", "vendida", "fraude", "farsa", "covarde", "traidor", "traidora",
+    "nojo", "nojento", "nojenta", "ridículo", "ridicula", "ridícula", "fraco", "fraca", "verme",
+    "capacho", "fantoche", "aparecer", "aparecendo", "circo", "decepção", "decepcao", "fora",
+}
+_PRO_CANDIDATE = {
+    "parabéns", "parabens", "apoio", "obrigado", "obrigada", "melhor", "ótima", "otima", "ótimo",
+    "excelente", "guerreira", "guerreiro", "orgulho", "admiro", "competente", "honesta", "honesto",
+    "votarei", "voto", "conte", "representa", "amo", "deus", "abençoe", "abençoa", "força", "forca",
+    "respeito", "merece", "lindo", "linda", "maravilhosa", "maravilhoso", "gratidão", "gratidao",
+}
+_TOKEN_RE = re.compile(r"[a-záàâãéêíóôõúüç]+", re.IGNORECASE)
+
+
+def _heuristic_classify(text: str) -> dict:
+    low = text.lower()
+    tokens = set(_TOKEN_RE.findall(low))
+    pro = len(tokens & _PRO_CANDIDATE) + low.count("❤") + low.count("🙏") + low.count("👏")
+    anti = len(tokens & _ANTI_CANDIDATE)
+    if anti > pro and anti > 0:
+        return {"sentiment": "negative", "score": -0.6, "stance": "contra", "target": "candidato", "themes": ["crítica pessoal"]}
+    if pro > 0 and pro >= anti:
+        return {"sentiment": "positive", "score": 0.6, "stance": "apoio", "target": "candidato", "themes": ["apoio pessoal"]}
+    return {"sentiment": "neutral", "score": 0.0, "stance": "neutro", "target": "nenhum", "themes": ["outros"]}
+
+
+# ----------------------------------------------------------------------------
 # Orquestração
 # ----------------------------------------------------------------------------
 def _persist(comment_id: str, res: dict) -> None:
     valid_themes = set(THEMES)
     sentiment = res.get("sentiment") if res.get("sentiment") in ("positive", "negative", "neutral") else "neutral"
     stance = res.get("stance") if res.get("stance") in ("apoio", "contra", "neutro") else "neutro"
+    target = res.get("target") if res.get("target") in TARGETS else "nenhum"
     try:
         score = max(-1.0, min(1.0, float(res.get("score", 0))))
     except (TypeError, ValueError):
@@ -159,13 +146,12 @@ def _persist(comment_id: str, res: dict) -> None:
     themes = [t for t in (res.get("themes") or []) if t in valid_themes][:3] or ["outros"]
     db.execute(
         """update comments set sentiment=%(s)s, sentiment_score=%(sc)s, stance=%(st)s,
-           themes=%(th)s, analyzed_at=now() where id=%(id)s""",
-        {"id": comment_id, "s": sentiment, "sc": score, "st": stance, "th": themes},
+           target=%(tg)s, themes=%(th)s, analyzed_at=now() where id=%(id)s""",
+        {"id": comment_id, "s": sentiment, "sc": score, "st": stance, "tg": target, "th": themes},
     )
 
 
 def analyze_pending(limit: int = 5000) -> int:
-    """Classifica comentários sem análise. Usa LLM se disponível, senão heurística."""
     rows = db.query_all(
         """
         select c.id, c.text, cand.display_name as candidate
@@ -191,7 +177,6 @@ def analyze_pending(limit: int = 5000) -> int:
                 raw = _llm_classify_batch(client, batch[0]["candidate"], batch)
                 results_by_index = {r.get("i"): r for r in raw if isinstance(r, dict)}
             except Exception as exc:  # noqa: BLE001
-                # falha do LLM (sem crédito/auth/etc) → cai pra heurística no resto do run
                 if provider == "auto":
                     print(f"[sentiment] LLM indisponível ({str(exc)[:120]}); usando heurística")
                     use_llm = False

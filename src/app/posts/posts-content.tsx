@@ -140,12 +140,45 @@ function ContextualBreakdown({
           )}
         </div>
 
-        <p className="mt-3 text-xs text-muted-foreground">
-          {data.apoio_percent > 50
-            ? "A maioria dos comentários demonstra apoio à candidata, mesmo os que expressam revolta com o tema abordado."
-            : data.contra_percent > 50
-              ? "A maioria dos comentários é crítica diretamente à candidata. Atenção redobrada neste conteúdo."
-              : "Os comentários estão divididos. Pode ser necessário ajustar a abordagem do conteúdo."}
+        {/* Para onde aponta a emoção — separa crítica real de indignação com o tema */}
+        <div className="mt-5">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-violet-300/80">
+            Para onde aponta a emoção
+          </p>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-lg border border-red-900/40 bg-red-950/30 p-3">
+              <p className="text-xl font-bold text-red-300">{data.critica_candidato}</p>
+              <p className="mt-1 text-[11px] leading-tight text-red-400/70">
+                Crítica ao candidato ({data.critica_candidato_percent}%)
+              </p>
+            </div>
+            <div className="rounded-lg border border-amber-900/40 bg-amber-950/30 p-3">
+              <p className="text-xl font-bold text-amber-300">{data.indignacao_tema}</p>
+              <p className="mt-1 text-[11px] leading-tight text-amber-400/70">
+                Indignação com o tema ({data.indignacao_tema_percent}%)
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
+              <p className="text-xl font-bold text-slate-300">{data.ataque_terceiro}</p>
+              <p className="mt-1 text-[11px] leading-tight text-slate-400/70">
+                Ataque a terceiros ({data.ataque_terceiro_percent}%)
+              </p>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground/70">
+            A indignação com o tema e o ataque a terceiros são engajamento — não contam como
+            negatividade contra o candidato.
+          </p>
+        </div>
+
+        <p className="mt-4 text-xs text-muted-foreground">
+          {data.critica_candidato_percent > 25
+            ? "Atenção: parcela relevante critica diretamente o candidato neste conteúdo."
+            : data.indignacao_tema_percent > data.apoio_percent
+              ? "A revolta aqui é com o TEMA do post, não com o candidato — sinal de engajamento forte e alinhado."
+              : data.apoio_percent > 40
+                ? "A maioria demonstra apoio ao candidato, inclusive quem expressa revolta com o tema abordado."
+                : "Os comentários estão divididos — vale acompanhar a abordagem do conteúdo."}
         </p>
       </CardContent>
     </Card>

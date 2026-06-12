@@ -394,7 +394,10 @@ def get_contextual_sentiment(post_id: str) -> ContextualSentimentData:
                count(*) filter (where analyzed_at is not null) as classified,
                count(*) filter (where stance='apoio')  as apoio,
                count(*) filter (where stance='contra')  as contra,
-               count(*) filter (where stance='neutro')  as neutro
+               count(*) filter (where stance='neutro')  as neutro,
+               count(*) filter (where target='candidato' and stance='contra') as critica_cand,
+               count(*) filter (where target='tema')      as indig_tema,
+               count(*) filter (where target='terceiro')  as ataque_terc
         from comments where post_id = %(id)s
         """,
         {"id": post_id},
@@ -403,6 +406,9 @@ def get_contextual_sentiment(post_id: str) -> ContextualSentimentData:
     apoio = int(counts["apoio"]) if counts else 0
     contra = int(counts["contra"]) if counts else 0
     neutro = int(counts["neutro"]) if counts else 0
+    critica = int(counts["critica_cand"]) if counts else 0
+    indig = int(counts["indig_tema"]) if counts else 0
+    terc = int(counts["ataque_terc"]) if counts else 0
     base = classified or 1
     return ContextualSentimentData(
         post_id=post_id,
@@ -416,6 +422,12 @@ def get_contextual_sentiment(post_id: str) -> ContextualSentimentData:
         apoio_percent=round(100 * apoio / base, 1),
         contra_percent=round(100 * contra / base, 1),
         neutro_percent=round(100 * neutro / base, 1),
+        critica_candidato=critica,
+        indignacao_tema=indig,
+        ataque_terceiro=terc,
+        critica_candidato_percent=round(100 * critica / base, 1),
+        indignacao_tema_percent=round(100 * indig / base, 1),
+        ataque_terceiro_percent=round(100 * terc / base, 1),
     )
 
 

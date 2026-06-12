@@ -176,6 +176,12 @@ export interface ContextualSentimentData {
   apoio_percent: number
   contra_percent: number
   neutro_percent: number
+  critica_candidato: number
+  indignacao_tema: number
+  ataque_terceiro: number
+  critica_candidato_percent: number
+  indignacao_tema_percent: number
+  ataque_terceiro_percent: number
 }
 
 // --- Scraping ---
