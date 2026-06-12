@@ -8,18 +8,21 @@ from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import analytics, db, suggestions
-from app.config import CANDIDATES, settings
+from app import analytics, db, profiles as profiles_module, suggestions
+from app.config import CANDIDATES, extract_username, settings
 from app.models import (
     CompetitiveAnalysisData,
     ComparisonData,
     ContextualSentimentData,
     HealthStatus,
+    CompareRequest,
+    CompareResult,
     OverviewData,
     PostsResponse,
+    ProfileData,
     ScrapingRunStatus,
     SentimentTimelineData,
     SuggestionsRequest,
@@ -30,6 +33,22 @@ from app.models import (
 
 scheduler: Optional[BackgroundScheduler] = None
 _scrape_lock = threading.Lock()
+_adhoc_lock = threading.Lock()
+_adhoc_running: set[str] = set()
+DEFAULT_OUR_ID = "sheila"
+
+
+def _run_adhoc(username: str) -> None:
+    with _adhoc_lock:
+        _adhoc_running.add(username)
+    try:
+        from app.scraper import analyze_single_profile
+        analyze_single_profile(username)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[compare] erro analisando @{username}: {exc}")
+    finally:
+        with _adhoc_lock:
+            _adhoc_running.discard(username)
 
 
 def run_migrations() -> None:
@@ -106,6 +125,25 @@ def health() -> HealthStatus:
     )
 
 
+# --- Profiles ---
+@app.get("/api/v1/profiles", response_model=list[ProfileData])
+def profiles() -> list[ProfileData]:
+    return profiles_module.get_profiles()
+
+
+@app.get("/api/v1/profiles/{candidate_id}/avatar")
+def profile_avatar(candidate_id: str) -> Response:
+    result = profiles_module.get_avatar(candidate_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Avatar não disponível")
+    data, content_type = result
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 # --- Analytics ---
 @app.get("/api/v1/analytics/overview", response_model=OverviewData)
 def overview() -> OverviewData:
@@ -159,6 +197,48 @@ def competitive(
 def post_suggestions(body: SuggestionsRequest | None = None) -> SuggestionsResponse:
     candidate_id = body.candidate_id if body else None
     return suggestions.generate_suggestions(candidate_id)
+
+
+# --- Comparação sob demanda (colar link de perfil) ---
+@app.post("/api/v1/compare/analyze", response_model=CompareResult)
+def compare_analyze(body: CompareRequest) -> CompareResult:
+    username = extract_username(body.url)
+    if not username:
+        return CompareResult(status="not_found", message="Não consegui identificar um perfil válido nesse link.")
+    with _adhoc_lock:
+        running = username in _adhoc_running
+    if not running:
+        threading.Thread(target=_run_adhoc, args=(username,), daemon=True).start()
+    return CompareResult(
+        status="running",
+        message=f"Analisando @{username}… isso leva ~1-2 min.",
+        username=username,
+        competitor_profile=profiles_module.get_one(username),
+    )
+
+
+@app.get("/api/v1/compare/{username}", response_model=CompareResult)
+def compare_status(username: str, our: Optional[str] = None) -> CompareResult:
+    username = username.lower()
+    our = our or DEFAULT_OUR_ID
+    with _adhoc_lock:
+        running = username in _adhoc_running
+    has_data = db.query_one("select 1 as x from posts where candidate_id=%(c)s limit 1", {"c": username})
+    competitor_profile = profiles_module.get_one(username)
+    if not has_data:
+        return CompareResult(
+            status="running" if running else "not_found",
+            message="Analisando…" if running else "Perfil ainda não analisado.",
+            username=username,
+            competitor_profile=competitor_profile,
+        )
+    return CompareResult(
+        status="running" if running else "ready",
+        username=username,
+        our_profile=profiles_module.get_one(our),
+        competitor_profile=competitor_profile,
+        analysis=analytics.get_competitive(our_username=our, competitor_username=username),
+    )
 
 
 # --- Análise contextual ---

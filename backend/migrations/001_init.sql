@@ -10,6 +10,10 @@ create table if not exists candidates (
     is_competitor boolean not null default false
 );
 
+-- candidatos ad-hoc (perfis enviados pelo usuário para comparação)
+alter table candidates add column if not exists is_adhoc boolean not null default false;
+alter table candidates add column if not exists added_at timestamptz default now();
+
 create table if not exists posts (
     id            text primary key,          -- shortcode/id do Instagram
     candidate_id  text not null references candidates(id) on delete cascade,
@@ -42,6 +46,26 @@ create index if not exists idx_comments_post on comments(post_id);
 create index if not exists idx_comments_candidate on comments(candidate_id);
 create index if not exists idx_comments_analyzed on comments(analyzed_at);
 create index if not exists idx_comments_sentiment on comments(sentiment);
+
+create table if not exists profiles (
+    candidate_id            text primary key references candidates(id) on delete cascade,
+    username                text,
+    full_name               text,
+    biography               text default '',
+    followers_count         bigint not null default 0,
+    follows_count           bigint not null default 0,
+    posts_count             bigint not null default 0,
+    profile_pic_url         text,
+    profile_pic_data        bytea,
+    profile_pic_content_type text,
+    verified                boolean not null default false,
+    is_private              boolean not null default false,
+    external_url            text,
+    category                text,
+    -- série histórica simples (snapshot anterior para deltas)
+    prev_followers_count    bigint,
+    updated_at              timestamptz not null default now()
+);
 
 create table if not exists scrape_runs (
     id                uuid primary key default gen_random_uuid(),

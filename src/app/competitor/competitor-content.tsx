@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button"
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton"
 import { ErrorMessage } from "@/components/shared/error-message"
 import { SuggestionCard } from "@/components/dashboard/suggestion-card"
+import { ComparePanel } from "@/components/profile/compare-panel"
 
 function MetricComparison({
   label,
@@ -231,7 +232,19 @@ export function CompetitorContent() {
         </div>
       </div>
 
-      <div className="mt-6 space-y-8">
+      {/* Comparar com qualquer perfil (colar link) */}
+      <div className="mt-6">
+        <ComparePanel ourId="sheila" />
+      </div>
+
+      <div className="mt-8 space-y-8">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Concorrente acompanhada — {COMPETITOR_DISPLAY}
+          </span>
+          <div className="h-px flex-1 bg-border/40" />
+        </div>
+
         {/* Loading */}
         {loading && (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

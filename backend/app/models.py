@@ -172,6 +172,27 @@ class ContextualSentimentData(BaseModel):
     neutro_percent: float
 
 
+class ProfileData(BaseModel):
+    candidate_id: str
+    username: str
+    full_name: Optional[str] = None
+    display_name: str
+    cargo: Optional[str] = None
+    is_competitor: bool = False
+    biography: str = ""
+    followers_count: int = 0
+    follows_count: int = 0
+    posts_count: int = 0
+    verified: bool = False
+    is_private: bool = False
+    external_url: Optional[str] = None
+    category: Optional[str] = None
+    has_avatar: bool = False
+    avatar_path: str = ""
+    followers_delta: Optional[int] = None
+    updated_at: Optional[str] = None
+
+
 class ScrapingRunStatus(BaseModel):
     run_id: str
     status: str
@@ -187,3 +208,17 @@ class HealthStatus(BaseModel):
 
 class SuggestionsRequest(BaseModel):
     candidate_id: Optional[str] = None
+
+
+class CompareRequest(BaseModel):
+    url: str
+    our_username: Optional[str] = None
+
+
+class CompareResult(BaseModel):
+    status: Literal["ready", "running", "not_found", "error"]
+    message: str = ""
+    username: Optional[str] = None
+    our_profile: Optional[ProfileData] = None
+    competitor_profile: Optional[ProfileData] = None
+    analysis: Optional[CompetitiveAnalysisData] = None

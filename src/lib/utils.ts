@@ -12,6 +12,41 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Formata números grandes de forma compacta no estilo pt-BR ("1,7 mi", "148 mil").
+ */
+export function formatCompact(n: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(n)
+}
+
+/** Número inteiro com separador de milhar pt-BR. */
+export function formatNumber(n: number): string {
+  return new Intl.NumberFormat("pt-BR").format(n)
+}
+
+/** Delta assinado e compacto: +1,2 mil / -340. Retorna null se não houver. */
+export function formatDelta(n: number | null | undefined): string | null {
+  if (n === null || n === undefined || n === 0) return null
+  const sign = n > 0 ? "+" : "−"
+  return `${sign}${formatCompact(Math.abs(n))}`
+}
+
+/** Tempo relativo curto em pt-BR ("há 2 h", "há 3 d"). */
+export function formatRelative(iso: string | null): string {
+  if (!iso) return "—"
+  const diff = Date.now() - new Date(iso).getTime()
+  const min = Math.round(diff / 60000)
+  if (min < 1) return "agora"
+  if (min < 60) return `há ${min} min`
+  const h = Math.round(min / 60)
+  if (h < 24) return `há ${h} h`
+  const d = Math.round(h / 24)
+  return `há ${d} d`
+}
+
+/**
  * Format an ISO date string to pt-BR format "DD/MM/YYYY HH:mm".
  * Returns "Nunca" if the value is null.
  */

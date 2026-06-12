@@ -186,6 +186,40 @@ export interface ScrapingRunStatus {
   message: string
 }
 
+// --- Profiles ---
+
+export interface ProfileData {
+  candidate_id: string
+  username: string
+  full_name: string | null
+  display_name: string
+  cargo: string | null
+  is_competitor: boolean
+  biography: string
+  followers_count: number
+  follows_count: number
+  posts_count: number
+  verified: boolean
+  is_private: boolean
+  external_url: string | null
+  category: string | null
+  has_avatar: boolean
+  avatar_path: string
+  followers_delta: number | null
+  updated_at: string | null
+}
+
+// --- Compare (ad-hoc) ---
+
+export interface CompareResult {
+  status: 'ready' | 'running' | 'not_found' | 'error'
+  message: string
+  username: string | null
+  our_profile: ProfileData | null
+  competitor_profile: ProfileData | null
+  analysis: CompetitiveAnalysisData | null
+}
+
 // --- Health ---
 
 export interface HealthStatus {

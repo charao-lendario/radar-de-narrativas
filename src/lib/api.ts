@@ -11,6 +11,8 @@ import type {
   SuggestionsResponse,
   ScrapingRunStatus,
   HealthStatus,
+  ProfileData,
+  CompareResult,
 } from "@/lib/types"
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -119,4 +121,30 @@ export async function triggerScraping(): Promise<ScrapingRunStatus> {
 
 export async function fetchHealth(): Promise<HealthStatus> {
   return apiFetch<HealthStatus>("/health")
+}
+
+// --- Profiles ---
+
+export async function fetchProfiles(): Promise<ProfileData[]> {
+  return apiFetch<ProfileData[]>("/api/v1/profiles")
+}
+
+/** URL absoluta do avatar servido pelo backend (sem dependência da CDN do Instagram). */
+export function avatarUrl(candidateId: string): string {
+  return `${API_BASE_URL}/api/v1/profiles/${candidateId}/avatar`
+}
+
+// --- Comparação sob demanda (colar link de perfil) ---
+
+export async function startCompare(url: string, ourId?: string): Promise<CompareResult> {
+  return apiFetch<CompareResult>("/api/v1/compare/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, our_username: ourId }),
+  })
+}
+
+export async function fetchCompareStatus(username: string, ourId?: string): Promise<CompareResult> {
+  const query = ourId ? `?our=${encodeURIComponent(ourId)}` : ""
+  return apiFetch<CompareResult>(`/api/v1/compare/${encodeURIComponent(username)}${query}`)
 }

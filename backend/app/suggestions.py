@@ -83,12 +83,24 @@ def generate_suggestions(candidate_id: str | None = None) -> SuggestionsResponse
         themes=", ".join(f"{t.theme} ({t.count})" for t in themes) or "n/d",
         trend=f"{trend.direction} (delta {trend.delta})",
     )
-    msg = _client().messages.create(
-        model=settings.suggestions_model,
-        max_tokens=3000,
-        system=SYSTEM,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        msg = _client().messages.create(
+            model=settings.suggestions_model,
+            max_tokens=3000,
+            system=SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as exc:  # noqa: BLE001 — sem crédito/chave: degrada com aviso
+        return SuggestionsResponse(
+            suggestions=[],
+            resumo_executivo=(
+                "As sugestões geradas por IA estão temporariamente indisponíveis "
+                f"(motivo: {str(exc)[:120]}). Os demais painéis continuam funcionando com os "
+                "dados coletados. Adicione créditos à API Anthropic para reativar esta seção."
+            ),
+            generated_at=generated_at,
+            data_snapshot=_snapshot(),
+        )
     raw = msg.content[0].text.strip()
     if raw.startswith("```"):
         raw = raw.split("```", 2)[1].lstrip("json").strip()

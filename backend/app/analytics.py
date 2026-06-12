@@ -61,13 +61,32 @@ def _candidate_metrics_row(candidate_id: str) -> dict:
     return row or {}
 
 
+def _resolve(key: str):
+    """key = id ou username → (id, username, display_name) ou None. Inclui ad-hoc do banco."""
+    if key in CANDIDATE_BY_ID:
+        c = CANDIDATE_BY_ID[key]
+        return c.id, c.username, c.display_name
+    if key in CANDIDATE_BY_USERNAME:
+        c = CANDIDATE_BY_USERNAME[key]
+        return c.id, c.username, c.display_name
+    row = db.query_one(
+        "select id, username, display_name from candidates where id=%(k)s or username=%(k)s limit 1",
+        {"k": key},
+    )
+    if row:
+        return row["id"], row["username"], row["display_name"]
+    return None
+
+
 def build_candidate_metrics(candidate_id: str) -> CandidateMetrics:
-    cand = CANDIDATE_BY_ID[candidate_id]
+    resolved = _resolve(candidate_id)
+    username = resolved[1] if resolved else candidate_id
+    display_name = resolved[2] if resolved else candidate_id
     r = _candidate_metrics_row(candidate_id)
     return CandidateMetrics(
         candidate_id=candidate_id,
-        username=cand.username,
-        display_name=cand.display_name,
+        username=username,
+        display_name=display_name,
         total_posts=int(r.get("total_posts", 0)),
         total_comments=int(r.get("total_comments", 0)),
         average_sentiment_score=round(float(r.get("avg_score", 0)), 4),
@@ -319,18 +338,19 @@ def get_comparison() -> ComparisonData:
 
 
 def _competitive_metrics(username: str) -> CompetitiveMetrics | None:
-    cand = CANDIDATE_BY_USERNAME.get(username)
-    if not cand:
+    resolved = _resolve(username)
+    if not resolved:
         return None
-    base = build_candidate_metrics(cand.id)
+    cand_id, cand_username, cand_display = resolved
+    base = build_candidate_metrics(cand_id)
     posts = base.total_posts or 1
     likes_row = db.query_one(
         "select coalesce(sum(like_count),0) as l, coalesce(sum(comment_count),0) as cm from posts where candidate_id=%(c)s",
-        {"c": cand.id},
+        {"c": cand_id},
     )
     return CompetitiveMetrics(
-        username=cand.username,
-        display_name=cand.display_name,
+        username=cand_username,
+        display_name=cand_display,
         total_posts=base.total_posts,
         total_comments=base.total_comments,
         average_sentiment_score=base.average_sentiment_score,
@@ -338,7 +358,7 @@ def _competitive_metrics(username: str) -> CompetitiveMetrics | None:
         avg_likes_per_post=round(int(likes_row["l"]) / posts, 1),
         avg_comments_per_post=round(int(likes_row["cm"]) / posts, 1),
         sentiment_distribution=base.sentiment_distribution,
-        top_themes=_top_themes(cand.id),
+        top_themes=_top_themes(cand_id),
     )
 
 
