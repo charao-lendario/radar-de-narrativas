@@ -4,7 +4,7 @@ export const CANDIDATE_B_USERNAME = 'delegadasheila'
 export const CANDIDATE_A_DISPLAY = 'Charlles Evangelista'
 export const CANDIDATE_B_DISPLAY = 'Delegada Sheila'
 
-export const CANDIDATE_A_CARGO = 'Deputado Federal'
+export const CANDIDATE_A_CARGO = 'Candidato'
 export const CANDIDATE_B_CARGO = 'Deputada Estadual'
 
 export const CANDIDATE_A_COLOR = 'var(--color-candidate-a)'

@@ -20,7 +20,7 @@ class Candidate:
 
 # Mapa fixo dos perfis monitorados (espelha src/lib/constants.ts do frontend)
 CANDIDATES: list[Candidate] = [
-    Candidate("charlles", "charlles.evangelista", "Charlles Evangelista", "Deputado Federal"),
+    Candidate("charlles", "charlles.evangelista", "Charlles Evangelista", "Candidato"),
     Candidate("sheila", "delegadasheila", "Delegada Sheila", "Deputada Estadual"),
     Candidate("ione", "delegadaione", "Delegada Ione", "Deputada", is_competitor=True),
 ]
